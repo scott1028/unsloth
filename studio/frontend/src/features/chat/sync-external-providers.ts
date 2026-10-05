@@ -318,6 +318,7 @@ export async function syncExternalProvidersFromBackend(
         models: resolvedModels,
         availableModels: resolvedAvailableModels,
         maxOutputTokens: config.max_output_tokens ?? undefined,
+        allowApiKeyAccess: config.allow_api_key_access === true,
 
         hasApiKey: config.has_api_key,
 

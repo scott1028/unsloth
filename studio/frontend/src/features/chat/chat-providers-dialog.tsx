@@ -271,6 +271,7 @@ export function ChatProvidersSettings({
   const [baseUrlDraft, setBaseUrlDraft] = useState("");
   const [apiType, setApiType] = useState<ConnectionApiType>("chat_completions");
   const [maxOutputTokensDraft, setMaxOutputTokensDraft] = useState("");
+  const [allowApiKeyAccess, setAllowApiKeyAccess] = useState(false);
   const [editingBackendProviderType, setEditingBackendProviderType] = useState<
     string | null
   >(null);
@@ -420,6 +421,7 @@ export function ChatProvidersSettings({
     if (seededProviderTypeRef.current === providerType) return;
     seededProviderTypeRef.current = providerType;
     setMaxOutputTokensDraft("");
+    setAllowApiKeyAccess(false);
     setApiType("chat_completions");
     setEditingBackendProviderType(null);
     const entry = registryByType.get(providerType);
@@ -545,6 +547,7 @@ export function ChatProvidersSettings({
     setShowApiKey(false);
     setBaseUrlDraft("");
     setMaxOutputTokensDraft("");
+    setAllowApiKeyAccess(false);
     setApiType("chat_completions");
     setEditingBackendProviderType(null);
     setAvailableModels([]);
@@ -906,6 +909,7 @@ export function ChatProvidersSettings({
           ? []
           : pruneProviderModelIds(providerType, availableModels),
         maxOutputTokens,
+        allowApiKeyAccess,
         apiKey: apiKey.trim(),
 
       });
@@ -931,6 +935,7 @@ export function ChatProvidersSettings({
           ? []
           : pruneProviderModelIds(providerType, availableModels),
         maxOutputTokens: created.max_output_tokens ?? undefined,
+        allowApiKeyAccess: created.allow_api_key_access === true,
 
         hasApiKey: created.has_api_key,
 
@@ -1078,6 +1083,7 @@ export function ChatProvidersSettings({
         models: keepSavedModels ? undefined : modelsToSave,
         availableModels: keepSavedModels ? undefined : availableModelsToSave,
         maxOutputTokens,
+        allowApiKeyAccess,
         ...(credentialEdit.action === "replace"
           ? { apiKey: credentialEdit.apiKey }
           : credentialEdit.action === "clear"
@@ -1107,6 +1113,7 @@ export function ChatProvidersSettings({
           ? (updated.available_models?.length ? updated.available_models : existing.availableModels)
           : availableModelsToSave,
         maxOutputTokens: updated.max_output_tokens ?? undefined,
+        allowApiKeyAccess: updated.allow_api_key_access === true,
 
         hasApiKey: updated.has_api_key,
         autoReloadModels:
@@ -1230,6 +1237,7 @@ export function ChatProvidersSettings({
             getExternalMinOutputTokens(provider.providerType),
           ).toString(),
     );
+    setAllowApiKeyAccess(provider.allowApiKeyAccess === true);
     setEditingBackendProviderType(provider.backendProviderType ?? null);
     setModelSearchQuery("");
     setIsReasoningModel(
@@ -1750,6 +1758,36 @@ export function ChatProvidersSettings({
                   />
                 </div>
               ) : null}
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="space-y-1">
+                  <Label
+                    htmlFor="provider-allow-api-key-access"
+                    className="text-sm font-medium"
+                  >
+                    Allow API keys and coding agents
+                  </Label>
+                  <p
+                    id="provider-allow-api-key-access-help"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Lets Unsloth API keys, including <code>unsloth start</code>, use
+                    this connection&apos;s saved credential. Anyone holding one of
+                    your API keys can then spend it.
+                  </p>
+                  {usesOAuth ? (
+                    <p className="text-xs leading-snug text-amber-700 dark:text-amber-400">
+                      Using a ChatGPT subscription from third-party agents may not
+                      be allowed by OpenAI&apos;s terms.
+                    </p>
+                  ) : null}
+                </div>
+                <Switch
+                  id="provider-allow-api-key-access"
+                  checked={allowApiKeyAccess}
+                  onCheckedChange={setAllowApiKeyAccess}
+                  aria-describedby="provider-allow-api-key-access-help"
+                />
+              </div>
               {showReasoningToggle ? (
                 <div className="grid grid-cols-[minmax(140px,0.8fr)_minmax(0,1.2fr)] items-center gap-4 px-4 py-3 @max-[520px]:grid-cols-1">
                   <Label

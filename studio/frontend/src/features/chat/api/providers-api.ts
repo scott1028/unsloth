@@ -53,6 +53,8 @@ export interface ProviderConfig {
   models?: string[];
   available_models?: string[];
   max_output_tokens?: number | null;
+  /** Lets sk-unsloth API keys (e.g. `unsloth start`) use this connection's saved credential. */
+  allow_api_key_access?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -210,6 +212,7 @@ export async function createProviderConfig(payload: {
   models?: string[];
   availableModels?: string[];
   maxOutputTokens?: number | null;
+  allowApiKeyAccess?: boolean;
   apiKey?: string;
 }): Promise<ProviderConfig> {
   return withApiKeyEncryptionRetry(payload.apiKey ?? "", async (encryptedApiKey) => {
@@ -226,6 +229,9 @@ export async function createProviderConfig(payload: {
         ...(payload.maxOutputTokens === undefined
           ? {}
           : { max_output_tokens: payload.maxOutputTokens }),
+        ...(payload.allowApiKeyAccess === undefined
+          ? {}
+          : { allow_api_key_access: payload.allowApiKeyAccess }),
         encrypted_api_key: encryptedApiKey,
       }),
     });
@@ -258,6 +264,7 @@ export async function updateProviderConfig(
     models?: string[];
     availableModels?: string[];
     maxOutputTokens?: number | null;
+    allowApiKeyAccess?: boolean;
     apiKey?: string;
     clearApiKey?: boolean;
   },
@@ -278,6 +285,9 @@ export async function updateProviderConfig(
         ...(payload.maxOutputTokens === undefined
           ? {}
           : { max_output_tokens: payload.maxOutputTokens }),
+        ...(payload.allowApiKeyAccess === undefined
+          ? {}
+          : { allow_api_key_access: payload.allowApiKeyAccess }),
         ...(payload.apiKey === undefined ? {} : { encrypted_api_key: encryptedApiKey }),
         ...(payload.clearApiKey === undefined ? {} : { clear_api_key: payload.clearApiKey }),
       }),

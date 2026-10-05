@@ -135,6 +135,8 @@ _OPENCODE_OUTPUT_TOKEN_MAX = 32_000
 _OPENCODE_OUTPUT_TOKEN_MAX_ENV = "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"
 _PROVIDER_HEADER = f"[model_providers.{_CODEX_PROFILE}]"
 _PASSTHROUGH = {"allow_extra_args": True, "ignore_unknown_options": True}
+# Unsloth routes "connection:<provider_id>/<model>" to that saved connection (Settings > Connections).
+_CONNECTION_MODEL_PREFIX = "connection:"
 
 
 class _PassthroughCommand(TyperCommand):
@@ -187,7 +189,8 @@ _MODEL_OPTION = typer.Option(
     "-m",
     rich_help_panel = _PANEL_MODEL,
     help = "Model for the agent, or a bare `org/name(:variant)` positional. "
-    "Defaults to the one loaded in Unsloth.",
+    "Defaults to the one loaded in Unsloth. Also takes a model from Settings > Connections "
+    "that allows API keys.",
 )
 _GGUF_VARIANT_OPTION = typer.Option(
     None,
@@ -816,6 +819,8 @@ def _subagent_model_id(
 ) -> str:
     """Return an API model id that preserves the selected GGUF variant. Coding-agent model definitions outlive the initial load, so if Unsloth later unloads the model a bare repository id may resolve to a different cached quant; include the explicit or currently loaded variant so an automatic reload selects the same weights."""
     model_id = str(entry["id"])
+    if model_id.startswith(_CONNECTION_MODEL_PREFIX):
+        return model_id
     _, inline_variant = _split_repo_variant(requested_model or "")
     variant = requested_variant or inline_variant
     if not variant:
@@ -1576,6 +1581,8 @@ def _require_studio(
         serve
         and launch
         and model
+        # A connection lives in a running Unsloth; `unsloth run` cannot serve one.
+        and not model.startswith(_CONNECTION_MODEL_PREFIX)
         and is_loopback_url(expected)
         and urlparse(expected).scheme == "http"
     ):
@@ -2093,6 +2100,69 @@ def _load_settings_differ(status: dict, load: LoadOptions, overrides: frozenset)
                 return True
             # Manual to manual is a real no-op: the payload only sends the implicit gpu_layers = -1 when switching INTO manual, so a resident already pinned to a layer count keeps it through the round-trip and nothing changes.
     return False
+
+
+def _resolve_connection_model(base: str, key: str, model: str, load: LoadOptions) -> Optional[dict]:
+    """The agent entry for a saved connection's model, or None to resolve `model` as a local one.
+
+    A model already loaded in Unsloth wins. Then an explicit connection:<id>/<model>, or a name
+    exactly one enabled connection lists. The connection must allow API keys, since the agent
+    reaches it with one.
+    """
+    explicit = model.startswith(_CONNECTION_MODEL_PREFIX)
+    if not explicit:
+        allow_casefold = is_loopback_url(base)
+        wanted = {model, _split_repo_variant(model)[0]}
+        if any(
+            m.get("loaded") is not False
+            and any(
+                _model_id_matches(m.get("id"), w, allow_casefold = allow_casefold) for w in wanted
+            )
+            for m in _loaded_models(base, key)
+        ):
+            return None
+    try:
+        connections = _http_json("GET", f"{base}/api/providers/", key)
+    except Exception as exc:  # noqa: BLE001 - an older or locked-down server keeps the local path
+        if explicit:
+            _fail(f"Couldn't list Unsloth connections: {exc}")
+        return None
+    connections = [c for c in connections or [] if isinstance(c, dict) and c.get("is_enabled")]
+    if explicit:
+        provider_id, _, external_model = model[len(_CONNECTION_MODEL_PREFIX) :].partition("/")
+        candidates = [(c, external_model) for c in connections if c.get("id") == provider_id]
+        if not candidates or not external_model:
+            _fail(f"No enabled connection in Unsloth matches '{model}'.")
+    else:
+        candidates = [(c, model) for c in connections if model in (c.get("models") or [])]
+        if not candidates:
+            return None
+    usable = [(c, m) for c, m in candidates if c.get("allow_api_key_access")]
+    if not usable:
+        names = ", ".join(sorted({str(c.get("display_name")) for c, _ in candidates}))
+        if all("allow_api_key_access" not in c for c, _ in candidates):
+            _fail(
+                f"'{model}' is on the {names} connection, but this Unsloth server cannot serve "
+                "connection models to agents. Update Unsloth."
+            )
+        _fail(
+            f"'{model}' is on the {names} connection, which does not allow API keys. Turn on "
+            "'Allow API keys and coding agents' for it in Settings > Connections."
+        )
+    if len(usable) > 1:
+        choices = "\n".join(
+            f"  --model {_CONNECTION_MODEL_PREFIX}{c['id']}/{m}  ({c.get('display_name')})"
+            for c, m in usable
+        )
+        _fail(f"'{model}' is offered by more than one connection. Pick one:\n{choices}")
+    if load.overrides():
+        _fail(
+            "Load options such as --gguf-variant or --max-seq-length do not apply to a "
+            "connection model."
+        )
+    connection, external_model = usable[0]
+    typer.echo(f"Using {external_model} from the {connection.get('display_name')} connection.")
+    return {"id": f"{_CONNECTION_MODEL_PREFIX}{connection['id']}/{external_model}", "loaded": True}
 
 
 def _resolve_model(
@@ -2903,6 +2973,9 @@ def _attach_gguf_check(
 
 
 def _require_gguf_for_agent(agent: _GgufAgent, base: str, key: str, model_id: str) -> None:
+    # Unsloth serves a connection model through its connection, whatever is loaded locally.
+    if model_id.startswith(_CONNECTION_MODEL_PREFIX):
+        return
     # Only a definite "no" rejects: the callers wrap this in `except BaseException: _shutdown_auto_served()`, so guessing kills a server that may have just loaded a GGUF.
     try:
         status = _http_json("GET", f"{base}/api/inference/status", key)
@@ -4376,6 +4449,8 @@ def _connect(
     server_options: ServerOptions = ServerOptions(),
     preload_check = None,
 ) -> tuple:
+    # A connection's model id may itself hold a ":" (qwen3:8b), so match connections on the unsplit request.
+    raw_model, raw_load = model, load
     # `--model org/name:QUANT` is shorthand for `--model org/name --gguf-variant QUANT`. Split it before we match or serve so the attach path resolves against the already-loaded `org/name` (listed without the suffix) instead of reloading a `:`-suffixed repo id, which Unsloth rejects and which would evict a model another session is using.
     if model:
         repo, variant = _split_repo_variant(model)
@@ -4388,8 +4463,13 @@ def _connect(
     )
     try:
         key = _agent_api_key(base, api_key, auto_started = server is not None)
+        entry = (
+            _resolve_connection_model(base, key, raw_model, raw_load)
+            if server is None and raw_model
+            else None
+        )
         # A server we just started has exactly the requested model loaded, so resolve to whatever it is serving instead of re-matching the raw --model string. Only an attach can still trigger an evicting load, so _resolve_model gets the pre-load check and runs it only when that load is imminent.
-        entry = _resolve_model(
+        entry = entry or _resolve_model(
             base,
             key,
             None if server is not None else model,

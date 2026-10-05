@@ -104,6 +104,7 @@ def _provider_response(row: dict) -> ProviderResponse:
         models = row.get("models") or [],
         available_models = row.get("available_models") or [],
         max_output_tokens = row.get("max_output_tokens"),
+        allow_api_key_access = bool(row.get("allow_api_key_access")),
         created_at = row["created_at"],
         updated_at = row["updated_at"],
     )
@@ -270,6 +271,7 @@ async def create_provider_config(
             available_models = payload.available_models,
             max_output_tokens = payload.max_output_tokens,
             api_type = payload.api_type,
+            allow_api_key_access = payload.allow_api_key_access,
         )
         try:
             if api_key:
@@ -361,6 +363,7 @@ async def update_provider_config(
         "available_models",
         "max_output_tokens",
         "api_type",
+        "allow_api_key_access",
     }
     metadata_requested = bool(payload.model_fields_set & metadata_fields)
 
@@ -392,6 +395,7 @@ async def update_provider_config(
             models = payload.models,
             available_models = payload.available_models,
             api_type = payload.api_type,
+            allow_api_key_access = payload.allow_api_key_access,
         )
         if max_output_tokens_requested:
             metadata_updates["max_output_tokens"] = payload.max_output_tokens
@@ -405,12 +409,13 @@ async def update_provider_config(
         available_models = existing.get("available_models") or [],
         max_output_tokens = existing.get("max_output_tokens"),
         api_type = existing.get("api_type", "chat_completions"),
+        allow_api_key_access = bool(existing.get("allow_api_key_access")),
     )
 
     def _current_matches(current: dict, field: str, written) -> bool:
         """Does the row still hold what this request wrote into that column?"""
-        if field == "is_enabled":
-            return bool(current.get("is_enabled")) == bool(written)
+        if field in ("is_enabled", "allow_api_key_access"):
+            return bool(current.get(field)) == bool(written)
         return current.get(field) == written
 
     def _restore_metadata() -> None:

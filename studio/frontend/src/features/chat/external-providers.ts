@@ -29,6 +29,8 @@ export interface ExternalProviderConfig {
   backendProviderType?: string;
   /** Optional Max Tokens cap for this connection, replacing the undocumented-model fallback. */
   maxOutputTokens?: number;
+  /** Whether sk-unsloth API keys (e.g. `unsloth start`) may use this connection's saved credential. */
+  allowApiKeyAccess?: boolean;
 
   /** Whether the backend has an installation-saved key. */
   hasApiKey?: boolean;

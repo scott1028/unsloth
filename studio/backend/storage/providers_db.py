@@ -132,6 +132,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _migrate_legacy_custom_provider_types(conn)
     if "max_output_tokens" not in existing_cols:
         conn.execute("ALTER TABLE llm_providers ADD COLUMN max_output_tokens INTEGER")
+    if "allow_api_key_access" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE llm_providers ADD COLUMN allow_api_key_access INTEGER NOT NULL DEFAULT 0"
+        )
     # ALTER TABLE persists independently in SQLite, but its one-time data migration does not.
     conn.commit()
 
@@ -193,6 +197,7 @@ def create_provider(
     available_models: Optional[list[str]] = None,
     max_output_tokens: Optional[int] = None,
     api_type: str = "chat_completions",
+    allow_api_key_access: bool = False,
 ) -> None:
     """Insert a new provider configuration."""
     now = datetime.now(timezone.utc).isoformat()
@@ -203,9 +208,9 @@ def create_provider(
             INSERT INTO llm_providers (
                 id, provider_type, display_name, base_url,
                 models_json, available_models_json, max_output_tokens, api_type,
-                created_at, updated_at
+                allow_api_key_access, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 id,
@@ -216,6 +221,7 @@ def create_provider(
                 _encode_models_json(available_models),
                 max_output_tokens,
                 api_type,
+                1 if allow_api_key_access else 0,
                 now,
                 now,
             ),
@@ -236,6 +242,7 @@ def update_provider(
     *,
     connection: sqlite3.Connection | None = None,
     api_type: str | None = None,
+    allow_api_key_access: Optional[bool] = None,
 ) -> bool:
     """Update fields on an existing provider. Returns True if a row was updated."""
     updates = []
@@ -261,6 +268,9 @@ def update_provider(
     if max_output_tokens is not _UNSET:
         updates.append("max_output_tokens = ?")
         params.append(max_output_tokens)
+    if allow_api_key_access is not None:
+        updates.append("allow_api_key_access = ?")
+        params.append(1 if allow_api_key_access else 0)
     if not updates:
         return False
     updates.append("updated_at = ?")

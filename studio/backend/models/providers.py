@@ -76,6 +76,10 @@ class ProviderCreate(BaseModel):
         le = MAX_JSON_SAFE_INTEGER,
         description = "Optional maximum Max Tokens cap for this connection",
     )
+    allow_api_key_access: bool = Field(
+        False,
+        description = "Let sk-unsloth API keys (e.g. `unsloth start`) use this connection's saved credential",
+    )
 
     encrypted_api_key: Optional[str] = Field(
         None,
@@ -102,6 +106,10 @@ class ProviderUpdate(BaseModel):
         ge = 64,
         le = MAX_JSON_SAFE_INTEGER,
         description = "Optional maximum Max Tokens cap for this connection",
+    )
+    allow_api_key_access: Optional[bool] = Field(
+        None,
+        description = "Let sk-unsloth API keys (e.g. `unsloth start`) use this connection's saved credential",
     )
 
     encrypted_api_key: Optional[str] = Field(
@@ -150,6 +158,10 @@ class ProviderResponse(BaseModel):
     max_output_tokens: Optional[int] = Field(
         None,
         description = "Configured maximum Max Tokens cap for this connection",
+    )
+    allow_api_key_access: bool = Field(
+        False,
+        description = "Whether sk-unsloth API keys may use this connection's saved credential",
     )
     created_at: str = Field(..., description = "ISO 8601 creation timestamp")
     updated_at: str = Field(..., description = "ISO 8601 last-update timestamp")
